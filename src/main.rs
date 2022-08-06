@@ -40,35 +40,41 @@ fn sample_mandelbrot(c: (f64, f64), iter_limit: i32, escape_radius: f64) -> i32 
         }
     }
     return iter_limit;
-} 
+}
+
+fn itercount_to_intensity_index(itercount: i32, iterlimit: i32, intensity_limit: i32) -> i32 {
+    /* intensity_limit is exclusive */
+    return if itercount < iterlimit { itercount * intensity_limit / iterlimit } else { 0 };
+}
 
 
 const ITER_LIMIT: i32 = 128;
 const ESCAPE_RADIUS: f64 = 4.0_f64;
 const _PALETTE_STR: &str = " .-+%#@";
 const PALETTE_SIZE: i32 = _PALETTE_STR.len() as i32;
-const SCREEN_SIZE: (i32, i32) = (128, 64);
+const SCREEN_SIZE: (i32, i32) = (4096, 4096);
 const SCREEN_PIXEL_COUNT: usize = (SCREEN_SIZE.0*SCREEN_SIZE.1) as usize;
 
+
+
 fn main() {
-    let greeting = String::from("hi");
-    let hello_world_info: (&String, &String) = (&greeting, &String::from("world"));
-    println!("{}, {}!", hello_world_info.0, hello_world_info.1);
+    println!("started.");
 
 
 
     // let mut encoder = png::Encoder::new(path_to_buffer_writer(Path::new(r"./output/test.png")), 16, 16);
-    let mut encoder = make_png_encoder(Path::new(r"./output/test.png"), (SCREEN_SIZE.0 as u32, SCREEN_SIZE.1 as u32));
+    let mut encoder = make_png_encoder(Path::new(r"./output/test3.png"), (SCREEN_SIZE.0 as u32, SCREEN_SIZE.1 as u32));
     encoder.set_color(png::ColorType::Grayscale);
     encoder.set_depth(png::BitDepth::Eight);
  
     let PALETTE: String = String::from(_PALETTE_STR);
     let view_pos = (0.0_f64, 0.0_f64);
     let view_size = (4.0_f64, 4.0_f64);
-    let mut screen_data: [u8; SCREEN_PIXEL_COUNT] = [0_u8; SCREEN_PIXEL_COUNT];
+
+    let mut screen_data = vec![0_u8; SCREEN_PIXEL_COUNT]; //: Vec<[u8; SCREEN_PIXEL_COUNT]>
     
     for y in 0..SCREEN_SIZE.1 {
-        print!("{}: ", y);
+        // print!("{}: ", y);
         for x in 0..SCREEN_SIZE.0 {
             // let intensity = (y + 2*x) % 6;
             // let currChar: String = String::from(PALETTE.as_bytes()[]);
@@ -76,15 +82,15 @@ fn main() {
             let c = (centerC.0 + view_pos.0 - 0.5*view_size.0, centerC.1 + view_pos.1 - 0.5*view_size.1);
             let iterCount = sample_mandelbrot(c, ITER_LIMIT, ESCAPE_RADIUS);
 
-            let pngPixelIntensity: u8 = (iterCount * 256 / (ITER_LIMIT + 1)) as u8;
+            // let pngPixelIntensity: u8 = (iterCount * 256 / (ITER_LIMIT + 1)) as u8;
             let indexInScreenData: usize = (y * SCREEN_SIZE.0 + x) as usize;
-            screen_data[indexInScreenData] = pngPixelIntensity;
+            screen_data[indexInScreenData] = itercount_to_intensity_index(iterCount, ITER_LIMIT, 256) as u8;
 
-            let charIntensity: i32 =  iterCount * PALETTE_SIZE / (ITER_LIMIT + 1);
-            let currChar = PALETTE.chars().nth(charIntensity as usize).unwrap();
-            print!("{}", currChar);
+            // let charIntensity: i32 =  iterCount * PALETTE_SIZE / (ITER_LIMIT + 1);
+            // let currChar = PALETTE.chars().nth(charIntensity as usize).unwrap();
+            // print!("{}", currChar);
         }
-        println!("");
+        // println!("");
     }
 
     let mut main_writer = encoder.write_header().unwrap();
