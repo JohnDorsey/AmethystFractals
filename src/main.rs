@@ -73,16 +73,18 @@ fn do_buddhabrot_point(c: (f64, f64), iter_limit: i32, escape_radius: f64, inclu
             if abs_squared(z) > escape_radius*escape_radius {
                 return;
             }
-            assert!(z.0.abs()*0.45_f64 <= view_size.0);
-            assert!(z.1.abs()*0.45_f64 <= view_size.1);
-            let mut screenIntCoord = screen_float_to_int(&z, screen_size, view_size, view_corner_pos);
+            // assert!(z.0.abs()*0.45_f64 <= view_size.0);
+            // assert!(z.1.abs()*0.45_f64 <= view_size.1);
+            let screenIntCoord = screen_float_to_int(&z, screen_size, view_size, view_corner_pos);
+            /*
             if (!i32_is_bounded(screenIntCoord.0, 0, screen_size.0-1)) || (!i32_is_bounded(screenIntCoord.1, 0, screen_size.1-1)) {
                 // screenIntCoord = (screenIntCoord.0 % screen_size.0, screenIntCoord.1 % screen_size.1);
                 panic!("invalid int coord reached: {:?} (from {:?} at iteration {}).", screenIntCoord, z, i);
             } 
+            */
             let indexInScreenData = coords_to_wrapped_vec_index(screenIntCoord, screen_size.0);
-            if screen_data[indexInScreenData as usize] < 255 {
-                screen_data[indexInScreenData as usize] += 1;
+            if screen_data[indexInScreenData as usize] <= 255-COUNT_SCALE {
+                screen_data[indexInScreenData as usize] += COUNT_SCALE;
             }
         }
     }
@@ -94,14 +96,15 @@ fn itercount_to_intensity_index(itercount: i32, iterlimit: i32, intensity_limit:
 }
 
 
-const ITER_LIMIT: i32 = 1024;
+const ITER_LIMIT: i32 = 65536;
 const ESCAPE_RADIUS: f64 = 2.0_f64;
 const _PALETTE_STR: &str = " .-+%#@";
 const PALETTE_SIZE: i32 = _PALETTE_STR.len() as i32;
 
-const BIDIRECTIONAL_SUPERSAMPLING: i32 = 4;
-const SCREEN_SIZE: (i32, i32) = (1024, 1024);
-const SEED_SCREEN_SIZE: (i32, i32) = (SCREEN_SIZE.0*BIDIRECTIONAL_SUPERSAMPLING, SCREEN_SIZE.1*BIDIRECTIONAL_SUPERSAMPLING);
+const BIDIRECTIONAL_SUPERSAMPLING: i32 = 1;
+const COUNT_SCALE: u8 = 1;
+const SCREEN_SIZE: (i32, i32) = (32768, 32768);
+const SEED_GRID_SIZE: (i32, i32) = (SCREEN_SIZE.0*BIDIRECTIONAL_SUPERSAMPLING, SCREEN_SIZE.1*BIDIRECTIONAL_SUPERSAMPLING);
 const SCREEN_PIXEL_COUNT: usize = (SCREEN_SIZE.0*SCREEN_SIZE.1) as usize;
 
 
@@ -144,7 +147,8 @@ fn main() {
 
 
     // let mut encoder = png::Encoder::new(path_to_buffer_writer(Path::new(r"./output/test.png")), 16, 16);
-    let mut encoder = make_png_encoder(Path::new(r"./output/test8.png"), (SCREEN_SIZE.0 as u32, SCREEN_SIZE.1 as u32));
+    let outfile_path_string: String = format!("./output/test14_{itr}itr{bisuper}bisuper_({width}x{height}).png", itr=ITER_LIMIT, bisuper=BIDIRECTIONAL_SUPERSAMPLING, width=SCREEN_SIZE.0, height=SCREEN_SIZE.1);
+    let mut encoder = make_png_encoder(Path::new(&outfile_path_string), (SCREEN_SIZE.0 as u32, SCREEN_SIZE.1 as u32));
     encoder.set_color(png::ColorType::Grayscale);
     encoder.set_depth(png::BitDepth::Eight);
  
@@ -160,13 +164,16 @@ fn main() {
 
 
     
-    for y in 0..SEED_SCREEN_SIZE.1 {
-        for x in 0..SEED_SCREEN_SIZE.0 {
+    for y in 0..SEED_GRID_SIZE.1 {
+        if y % 512 == 0 {
+            println!("{}/{} seed rows complete.", y, SEED_GRID_SIZE.0);
+        }
+        for x in 0..SEED_GRID_SIZE.0 {
             // let intensity = (y + 2*x) % 6;
             // let currChar: String = String::from(PALETTE.as_bytes()[]);
             //let centerC = screen_int_to_float(&x, &y, &SCREEN_SIZE.0, &SCREEN_SIZE.1, &view_size.0, &view_size.1);
             //let c = (centerC.0 - view_corner_pos.0, centerC.1 - view_corner_pos.1);
-            let c = screen_int_to_float(&(x,y), &SEED_SCREEN_SIZE, &view_size, &view_corner_pos);
+            let c = screen_int_to_float(&(x,y), &SEED_GRID_SIZE, &view_size, &view_corner_pos);
             /*
             let iterCount = sample_mandelbrot(c, ITER_LIMIT, ESCAPE_RADIUS);
             let indexInScreenData = coords_to_wrapped_vec_index((x,y), SCREEN_SIZE.0);
