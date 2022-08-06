@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 png = "0.17.5"
+format_num = "0.1.0"

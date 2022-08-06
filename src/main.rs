@@ -111,8 +111,8 @@ fn do_buddhabrot_point(c: (f64, f64), iter_limit: i32, escape_radius: f64, inclu
                 // screenIntCoord = (screenIntCoord.0 % screen_size.0, screenIntCoord.1 % screen_size.1);
                 // panic!("invalid int coord reached: {:?} (from {:?} at iteration {}).", screenIntCoord, z, i);
                 continue;
-            } 
-            
+            }
+            assert!(SCREEN_CHANNEL_COUNT == 3);
             let indexInScreenData = coords_to_wrapped_vec_index((screenIntCoord.0*(SCREEN_CHANNEL_COUNT as i32), screenIntCoord.1), screen_size.0*(SCREEN_CHANNEL_COUNT as i32)) as usize;
             if screen_data[indexInScreenData] <= 255-COUNT_SCALE {
                 screen_data[indexInScreenData] += COUNT_SCALE;
@@ -177,7 +177,7 @@ const PALETTE_SIZE: i32 = _PALETTE_STR.len() as i32;
 
 const BIDIRECTIONAL_SUPERSAMPLING: i32 = 1;
 const COUNT_SCALE: u8 = 4;
-const SCREEN_SIZE: (i32, i32) = (1024, 1024);
+const SCREEN_SIZE: (i32, i32) = (16384, 16384);
 const SEED_GRID_SIZE: (i32, i32) = (SCREEN_SIZE.0*BIDIRECTIONAL_SUPERSAMPLING, SCREEN_SIZE.1*BIDIRECTIONAL_SUPERSAMPLING);
 const SCREEN_CHANNEL_COUNT: usize = 3;
 // const SCREEN_PIXEL_COUNT: usize = (SCREEN_SIZE.0*SCREEN_SIZE.1) as usize;
