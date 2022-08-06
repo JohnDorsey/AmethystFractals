@@ -8,8 +8,6 @@ use std::path::Path;
 use std::fs::File;
 use std::io::BufWriter;
 
-// png::Encoder::new!();
-// let path: Path = Path::new(path_str);
 
 fn path_to_buffer_writer(path: &Path) -> BufWriter<File> {
     let file: File = File::create(path).unwrap();
@@ -22,31 +20,19 @@ fn make_png_encoder(path: &Path, size: (u32, u32)) -> png::Encoder<BufWriter<Fil
     return encoder;
 }
 
-/*
-fn screen_int_to_float(x: &i32, y: &i32, screen_width: &i32, screen_height: &i32, view_width: &f64, view_height: &f64) -> (f64, f64) {
-    return ((*x as f64)*view_width/(*screen_width as f64), (*y as f64)*view_height/(*screen_height as f64));
-}
-*/
+
 fn screen_int_to_float(int_coords: &(i32, i32), screen_size: &(i32, i32), view_size: &(f64, f64), view_corner_pos: &(f64, f64)) -> (f64, f64) {
     return ((int_coords.0 as f64)*view_size.0/((screen_size.0-1) as f64)+view_corner_pos.0, (int_coords.1 as f64)*view_size.1/((screen_size.1-1) as f64)+view_corner_pos.1);
 }
 
 fn screen_float_to_int(z: &(f64, f64), screen_size: &(i32, i32), view_size: &(f64, f64), view_corner_pos: &(f64, f64)) -> (i32, i32) {
-    // return ((*x as f64)*view_width/(*screen_width as f64), (*y as f64)*view_height/(*screen_height as f64));
     return (((z.0-view_corner_pos.0) * (screen_size.0 as f64) / view_size.0) as i32,  ((z.1-view_corner_pos.1) * (screen_size.1 as f64) / view_size.1) as i32);
 }
 
 fn coords_to_wrapped_vec_index(int_coords: (i32, i32), wrap_width: i32) -> i32 {
     return int_coords.1 * wrap_width + int_coords.0;
 }
-/*
-fn write_to_wrapped_vec<T>(input_vec: &mut Vec<T>, wrap_width: i32, int_coords: (i32, i32), value: T) -> &mut Vec<T> {
 
-    let indexInData: usize = (int_coords.1 * wrap_width + int_coords.0) as usize;
-    input_vec[indexInData] = value;
-    return input_vec;
-}
-*/
 
 
 fn step_mandelbrot_point(z: (f64, f64), c: (f64, f64)) -> (f64, f64) {
@@ -108,11 +94,14 @@ fn itercount_to_intensity_index(itercount: i32, iterlimit: i32, intensity_limit:
 }
 
 
-const ITER_LIMIT: i32 = 128;
+const ITER_LIMIT: i32 = 1024;
 const ESCAPE_RADIUS: f64 = 2.0_f64;
 const _PALETTE_STR: &str = " .-+%#@";
 const PALETTE_SIZE: i32 = _PALETTE_STR.len() as i32;
+
+const BIDIRECTIONAL_SUPERSAMPLING: i32 = 4;
 const SCREEN_SIZE: (i32, i32) = (1024, 1024);
+const SEED_SCREEN_SIZE: (i32, i32) = (SCREEN_SIZE.0*BIDIRECTIONAL_SUPERSAMPLING, SCREEN_SIZE.1*BIDIRECTIONAL_SUPERSAMPLING);
 const SCREEN_PIXEL_COUNT: usize = (SCREEN_SIZE.0*SCREEN_SIZE.1) as usize;
 
 
@@ -155,7 +144,7 @@ fn main() {
 
 
     // let mut encoder = png::Encoder::new(path_to_buffer_writer(Path::new(r"./output/test.png")), 16, 16);
-    let mut encoder = make_png_encoder(Path::new(r"./output/test6.png"), (SCREEN_SIZE.0 as u32, SCREEN_SIZE.1 as u32));
+    let mut encoder = make_png_encoder(Path::new(r"./output/test8.png"), (SCREEN_SIZE.0 as u32, SCREEN_SIZE.1 as u32));
     encoder.set_color(png::ColorType::Grayscale);
     encoder.set_depth(png::BitDepth::Eight);
  
@@ -171,19 +160,19 @@ fn main() {
 
 
     
-    for y in 0..SCREEN_SIZE.1 {
-        for x in 0..SCREEN_SIZE.0 {
+    for y in 0..SEED_SCREEN_SIZE.1 {
+        for x in 0..SEED_SCREEN_SIZE.0 {
             // let intensity = (y + 2*x) % 6;
             // let currChar: String = String::from(PALETTE.as_bytes()[]);
             //let centerC = screen_int_to_float(&x, &y, &SCREEN_SIZE.0, &SCREEN_SIZE.1, &view_size.0, &view_size.1);
             //let c = (centerC.0 - view_corner_pos.0, centerC.1 - view_corner_pos.1);
-            let c = screen_int_to_float(&(x,y), &SCREEN_SIZE, &view_size, &view_corner_pos);
+            let c = screen_int_to_float(&(x,y), &SEED_SCREEN_SIZE, &view_size, &view_corner_pos);
             /*
             let iterCount = sample_mandelbrot(c, ITER_LIMIT, ESCAPE_RADIUS);
             let indexInScreenData = coords_to_wrapped_vec_index((x,y), SCREEN_SIZE.0);
             screen_data[indexInScreenData as usize] = itercount_to_intensity_index(iterCount, ITER_LIMIT, 256) as u8;
             */
-            do_buddhabrot_point(c, ITER_LIMIT, ESCAPE_RADIUS, true, true, &mut screen_data, &SCREEN_SIZE, &view_size, &view_corner_pos);
+            do_buddhabrot_point(c, ITER_LIMIT, ESCAPE_RADIUS, true, false, &mut screen_data, &SCREEN_SIZE, &view_size, &view_corner_pos);
 
             // screen_data = write_to_wrapped_vec(screen_data, SCREEN_SIZE.0, (x,y), itercount_to_intensity_index(iterCount, ITER_LIMIT, 256) as u8);
 
