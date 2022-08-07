@@ -8,6 +8,10 @@ use std::path::Path;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::ops;
+use std::str::FromStr;
+use std::time::SystemTime;
+
+use format_num::format_num;
 
 
 fn path_to_buffer_writer(path: &Path) -> BufWriter<File> {
@@ -104,7 +108,7 @@ fn do_buddhabrot_point(c: (f64, f64), iter_limit: i32, escape_radius: f64, inclu
                 weighted_sum_of_pair((z.0, sampleResult.last_position.0), (1.0-escapeProgress, escapeProgress)), weighted_sum_of_pair((z.1, sampleResult.last_position.1), (1.0-escapeProgress, escapeProgress))
             );
             */
-            let modifiedZ = (z.0*c.0+z.1*sampleResult.last_position.0, z.0*c.1+z.1*sampleResult.last_position.1);
+            let modifiedZ = (z.1*c.0+z.0*sampleResult.last_position.0, z.1*c.1+z.0*sampleResult.last_position.1);
             let screenIntCoord = screen_float_to_int(&modifiedZ, screen_size, view_size, view_corner_pos);
             
             if (!int_is_bounded(screenIntCoord.0, 0, screen_size.0-1)) || (!int_is_bounded(screenIntCoord.1, 0, screen_size.1-1)) {
@@ -114,6 +118,7 @@ fn do_buddhabrot_point(c: (f64, f64), iter_limit: i32, escape_radius: f64, inclu
             }
             assert!(SCREEN_CHANNEL_COUNT == 3);
             let indexInScreenData = coords_to_wrapped_vec_index((screenIntCoord.0*(SCREEN_CHANNEL_COUNT as i32), screenIntCoord.1), screen_size.0*(SCREEN_CHANNEL_COUNT as i32)) as usize;
+            // let (czLen, zeLen, ceLen) = 
             if screen_data[indexInScreenData] <= 255-COUNT_SCALE {
                 screen_data[indexInScreenData] += COUNT_SCALE;
             }
@@ -170,27 +175,32 @@ mod tests {
 
 
 
-const ITER_LIMIT: i32 = 32768;
+const ITER_LIMIT: i32 = 524288;
 const ESCAPE_RADIUS: f64 = 2.0_f64;
 const _PALETTE_STR: &str = " .-+%#@";
 const PALETTE_SIZE: i32 = _PALETTE_STR.len() as i32;
 
 const BIDIRECTIONAL_SUPERSAMPLING: i32 = 1;
-const COUNT_SCALE: u8 = 4;
-const SCREEN_SIZE: (i32, i32) = (16384, 16384);
+const COUNT_SCALE: u8 = 1;
+const SCREEN_SIZE: (i32, i32) = (1024, 1024);
 const SEED_GRID_SIZE: (i32, i32) = (SCREEN_SIZE.0*BIDIRECTIONAL_SUPERSAMPLING, SCREEN_SIZE.1*BIDIRECTIONAL_SUPERSAMPLING);
 const SCREEN_CHANNEL_COUNT: usize = 3;
 // const SCREEN_PIXEL_COUNT: usize = (SCREEN_SIZE.0*SCREEN_SIZE.1) as usize;
 const SCREEN_INT_COUNT: usize = ((SCREEN_SIZE.0*SCREEN_SIZE.1) as usize) * SCREEN_CHANNEL_COUNT;
+const OUTPUT_BAND_COUNT: i32 = 8;
+const OUTPUT_BAND_SEED_GRID_HEIGHT: i32 = SEED_GRID_SIZE.1 / OUTPUT_BAND_COUNT;
 
 
 
-fn main() {
-    println!("started.");
-
-
+fn save_project_png(screen_data: &mut Vec<u8>, suffix: String) {
+    
     // escProgressLerpsZToEscPt
-    let outfile_path_string: String = format!("./output/test23_bb_RallGincrBinci_zrAKc+ziAKescPt_{itr}itr{bisuper}bisuper_color({colorScale}scale)_({width}x{height}).png", itr=ITER_LIMIT, bisuper=BIDIRECTIONAL_SUPERSAMPLING, colorScale=COUNT_SCALE, width=SCREEN_SIZE.0, height=SCREEN_SIZE.1);
+    let now = SystemTime::now();
+
+    let outfile_path_string: String = format!(
+        "./output/seqs/test24_bb_RallGincrBinci_ziAKc+zrAKescPt_{itr}itr{bisuper}bisuper_color({colorScale}scale)_({width}x{height})_{suffixInsert}.png",
+        itr=ITER_LIMIT, bisuper=BIDIRECTIONAL_SUPERSAMPLING, colorScale=COUNT_SCALE, width=SCREEN_SIZE.0, height=SCREEN_SIZE.1, suffixInsert=suffix,
+    );
     let mut encoder = make_png_encoder(Path::new(&outfile_path_string), (SCREEN_SIZE.0 as u32, SCREEN_SIZE.1 as u32));
 
     {
@@ -203,6 +213,35 @@ fn main() {
         encoder.set_color(colorType);
     }
     encoder.set_depth(png::BitDepth::Eight);
+
+
+    let mut main_writer = encoder.write_header().unwrap();
+    main_writer.write_image_data(&screen_data).unwrap();
+    // let elapsed = now.elapsed();
+    println!("saved an image as {}.", outfile_path_string);
+    match now.elapsed() {
+        Ok(elapsed) => {
+            println!("saving image took {} seconds.", format_num!(".2f", elapsed.as_secs_f32()));
+        }
+        Err(e) => {
+            eprintln!("calculating time taken to save image FAILED.");
+        }
+    }
+
+}
+
+
+fn save_project_png_seq_member(screen_data: &mut Vec<u8>, sequence_index: i32) {
+    let seqIndexString = format_num!("0>4d", sequence_index);
+    save_project_png(screen_data, seqIndexString);
+}
+
+
+
+fn main() {
+    println!("started.");
+
+
  
     //let PALETTE: String = String::from(_PALETTE_STR);
     let view_pos = (0.0_f64, 0.0_f64);
@@ -210,9 +249,6 @@ fn main() {
     let view_corner_pos = (view_pos.0 - 0.5*view_size.0, view_pos.1 - 0.5*view_size.1);
 
     let mut screen_data = vec![0_u8; SCREEN_INT_COUNT]; //: Vec<[u8; SCREEN_PIXEL_COUNT]>
-
-
-
 
 
     
@@ -223,6 +259,9 @@ fn main() {
             print!(" {}/{}.", y, SEED_GRID_SIZE.0);
         }
         std::io::stdout().flush().unwrap();
+        if y % OUTPUT_BAND_SEED_GRID_HEIGHT == 0 {
+            save_project_png_seq_member(&mut screen_data, y / OUTPUT_BAND_SEED_GRID_HEIGHT);
+        }
         for x in 0..SEED_GRID_SIZE.0 {
             // let intensity = (y + 2*x) % 6;
             // let currChar: String = String::from(PALETTE.as_bytes()[]);
@@ -241,8 +280,7 @@ fn main() {
         }
     }
 
-    let mut main_writer = encoder.write_header().unwrap();
-    main_writer.write_image_data(&screen_data).unwrap();
+    save_project_png(&mut screen_data, String::from_str("fin").unwrap());
 
 
 }
