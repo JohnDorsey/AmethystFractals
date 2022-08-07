@@ -12,6 +12,8 @@ use std::str::FromStr;
 use std::time::SystemTime;
 
 use format_num::format_num;
+//use num::Complex;
+use num::complex::Complex64;
 
 
 fn path_to_buffer_writer(path: &Path) -> BufWriter<File> {
@@ -30,8 +32,8 @@ fn screen_int_to_float(int_coords: &(i32, i32), screen_size: &(i32, i32), view_s
     return ((int_coords.0 as f64)*view_size.0/((screen_size.0-1) as f64)+view_corner_pos.0, (int_coords.1 as f64)*view_size.1/((screen_size.1-1) as f64)+view_corner_pos.1);
 }
 
-fn screen_float_to_int(z: &(f64, f64), screen_size: &(i32, i32), view_size: &(f64, f64), view_corner_pos: &(f64, f64)) -> (i32, i32) {
-    return (((z.0-view_corner_pos.0) * (screen_size.0 as f64) / view_size.0) as i32,  ((z.1-view_corner_pos.1) * (screen_size.1 as f64) / view_size.1) as i32);
+fn screen_complex_to_int(z: &num::complex::Complex64, screen_size: &(i32, i32), view_size: &(f64, f64), view_corner_pos: &(f64, f64)) -> (i32, i32) {
+    return (((z.re-view_corner_pos.0) * (screen_size.0 as f64) / view_size.0) as i32,  ((z.im-view_corner_pos.1) * (screen_size.1 as f64) / view_size.1) as i32);
 }
 
 fn coords_to_wrapped_vec_index(int_coords: (i32, i32), wrap_width: i32) -> i32 {
@@ -40,22 +42,24 @@ fn coords_to_wrapped_vec_index(int_coords: (i32, i32), wrap_width: i32) -> i32 {
 
 
 
-fn step_mandelbrot_point(z: (f64, f64), c: (f64, f64)) -> (f64, f64) {
-    let zSquared = (z.0*z.0-(z.1*z.1), 2f64*z.0*z.1);
-    return (zSquared.0+c.0, zSquared.1+c.1);
+fn step_mandelbrot_point(z: Complex64, c: Complex64) -> Complex64 {
+    //let zSquared = (z.re*z.re-(z.im*z.im), 2f64*z.re*z.im);
+    // return (zSquared.re+c.re, zSquared.im+c.im);
+    return z * z + c;
 }
-fn abs_squared(z: (f64, f64)) -> f64 {
-    return z.0*z.0+z.1*z.1;
+fn abs_squared<T: num::One + Clone + ops::Add<Output = T> + ops::Mul<Output = T>>(z: num::Complex<T>) -> T {
+    // return z.re*z.re+z.im*z.im;
+    num::pow(z.re, 2) + num::pow(z.im, 2)
 }
 
 struct SampleMandelbrotResult {
     iter_count: i32,
     escaped: bool,
-    last_position: (f64, f64)
+    last_position: Complex64
 }
 
-fn sample_mandelbrot(c: (f64, f64), iter_limit: i32, escape_radius: f64) -> SampleMandelbrotResult {
-    let mut z = (0.0_f64, 0.0_f64);
+fn sample_mandelbrot(c: Complex64, iter_limit: i32, escape_radius: f64) -> SampleMandelbrotResult {
+    let mut z = Complex64::new(0.0_f64, 0.0_f64);
     for i in 0..iter_limit {
         z = step_mandelbrot_point(z, c);
         if abs_squared(z) > escape_radius*escape_radius {
@@ -85,7 +89,7 @@ fn weighted_sum_of_pair<T: ops::Mul<Output = T> + ops::Add<Output = T>>(waypoint
 }
 
 
-fn do_buddhabrot_point(c: (f64, f64), iter_limit: i32, escape_radius: f64, include_escaping: bool, include_nonescaping: bool, screen_data: &mut Vec<u8>, screen_size: &(i32, i32), view_size: &(f64, f64), view_corner_pos: &(f64, f64)) {
+fn do_buddhabrot_point(c: Complex64, iter_limit: i32, escape_radius: f64, include_escaping: bool, include_nonescaping: bool, screen_data: &mut Vec<u8>, screen_size: &(i32, i32), view_size: &(f64, f64), view_corner_pos: &(f64, f64)) {
     let sampleResult = sample_mandelbrot(c, iter_limit, escape_radius);
     let shouldBeDrawn = (sampleResult.escaped && include_escaping) || ((!sampleResult.escaped) && include_nonescaping);
 
@@ -93,7 +97,7 @@ fn do_buddhabrot_point(c: (f64, f64), iter_limit: i32, escape_radius: f64, inclu
     //screen_data[mandelIndexInScreenData as usize] += iterCount;
 
     if shouldBeDrawn {
-        let mut z = (0.0_f64, 0.0_f64);
+        let mut z = Complex64::new(0.0_f64, 0.0_f64);
         for i in 0..iter_limit {
             z = step_mandelbrot_point(z, c);
             if abs_squared(z) > escape_radius*escape_radius {
@@ -108,8 +112,9 @@ fn do_buddhabrot_point(c: (f64, f64), iter_limit: i32, escape_radius: f64, inclu
                 weighted_sum_of_pair((z.0, sampleResult.last_position.0), (1.0-escapeProgress, escapeProgress)), weighted_sum_of_pair((z.1, sampleResult.last_position.1), (1.0-escapeProgress, escapeProgress))
             );
             */
-            let modifiedZ = (z.1*c.0+z.0*sampleResult.last_position.0, z.1*c.1+z.0*sampleResult.last_position.1);
-            let screenIntCoord = screen_float_to_int(&modifiedZ, screen_size, view_size, view_corner_pos);
+            let modifiedZ = Complex64::new(z.im*c.re+z.re*sampleResult.last_position.re, z.im*c.im+z.re*sampleResult.last_position.im);
+            //let modifiedZAsComplex = Complex64 { re: modifiedZ.0, im: modifiedZ.1 };
+            let screenIntCoord = screen_complex_to_int(&modifiedZ, screen_size, view_size, view_corner_pos);
             
             if (!int_is_bounded(screenIntCoord.0, 0, screen_size.0-1)) || (!int_is_bounded(screenIntCoord.1, 0, screen_size.1-1)) {
                 // screenIntCoord = (screenIntCoord.0 % screen_size.0, screenIntCoord.1 % screen_size.1);
@@ -122,10 +127,10 @@ fn do_buddhabrot_point(c: (f64, f64), iter_limit: i32, escape_radius: f64, inclu
             if screen_data[indexInScreenData] <= 255-COUNT_SCALE {
                 screen_data[indexInScreenData] += COUNT_SCALE;
             }
-            if screen_data[indexInScreenData+1] <= 255-COUNT_SCALE && z.0>c.0{
+            if screen_data[indexInScreenData+1] <= 255-COUNT_SCALE && z.re>c.re {
                 screen_data[indexInScreenData+1] += COUNT_SCALE;
             }
-            if screen_data[indexInScreenData+2] <= 255-COUNT_SCALE && z.1>c.1{
+            if screen_data[indexInScreenData+2] <= 255-COUNT_SCALE && z.im>c.im {
                 screen_data[indexInScreenData+2] += COUNT_SCALE;
             }
         }
@@ -157,12 +162,12 @@ mod tests {
     }
 
     #[test]
-    fn screen_float_to_int_test() {
-        let result = screen_float_to_int(&(-1.99, -1.99), &(400,400), &(4.0,4.0), &(-2.0,-2.0));
+    fn screen_complex_to_int_test() {
+        let result = screen_complex_to_int(&Complex64::new(-1.99, -1.99), &(400,400), &(4.0,4.0), &(-2.0,-2.0));
         if result.0 > 2 || result.1 > 2 {
             panic!("low output int coord is not correct: {:?}", result);
         }
-        let result = screen_float_to_int(&(1.99, 1.99), &(400,400), &(4.0,4.0), &(-2.0,-2.0));
+        let result = screen_complex_to_int(&Complex64::new(1.99, 1.99), &(400,400), &(4.0,4.0), &(-2.0,-2.0));
         if result.0 < 397 || result.1 < 397 {
             panic!("high output int coord is not correct: {:?}", result);
         }
@@ -175,7 +180,7 @@ mod tests {
 
 
 
-const ITER_LIMIT: i32 = 524288;
+const ITER_LIMIT: i32 = 16384;
 const ESCAPE_RADIUS: f64 = 2.0_f64;
 const _PALETTE_STR: &str = " .-+%#@";
 const PALETTE_SIZE: i32 = _PALETTE_STR.len() as i32;
@@ -198,7 +203,7 @@ fn save_project_png(screen_data: &mut Vec<u8>, suffix: String) {
     let now = SystemTime::now();
 
     let outfile_path_string: String = format!(
-        "./output/seqs/test24_bb_RallGincrBinci_ziAKc+zrAKescPt_{itr}itr{bisuper}bisuper_color({colorScale}scale)_({width}x{height})_{suffixInsert}.png",
+        "./output/seqs/test24cpx_bb_RallGincrBinci_ziAKc+zrAKescPt_{itr}itr{bisuper}bisuper_color({colorScale}scale)_({width}x{height})_{suffixInsert}.png",
         itr=ITER_LIMIT, bisuper=BIDIRECTIONAL_SUPERSAMPLING, colorScale=COUNT_SCALE, width=SCREEN_SIZE.0, height=SCREEN_SIZE.1, suffixInsert=suffix,
     );
     let mut encoder = make_png_encoder(Path::new(&outfile_path_string), (SCREEN_SIZE.0 as u32, SCREEN_SIZE.1 as u32));
@@ -267,7 +272,8 @@ fn main() {
             // let currChar: String = String::from(PALETTE.as_bytes()[]);
             //let centerC = screen_int_to_float(&x, &y, &SCREEN_SIZE.0, &SCREEN_SIZE.1, &view_size.0, &view_size.1);
             //let c = (centerC.0 - view_corner_pos.0, centerC.1 - view_corner_pos.1);
-            let c = screen_int_to_float(&(x,y), &SEED_GRID_SIZE, &view_size, &view_corner_pos);
+            let cAsFloatTup = screen_int_to_float(&(x,y), &SEED_GRID_SIZE, &view_size, &view_corner_pos);
+            let c = Complex64::new(cAsFloatTup.0, cAsFloatTup.1);
             /*
             let iterCount = sample_mandelbrot(c, ITER_LIMIT, ESCAPE_RADIUS);
             let indexInScreenData = coords_to_wrapped_vec_index((x,y), SCREEN_SIZE.0);
