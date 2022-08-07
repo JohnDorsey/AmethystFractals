@@ -28,8 +28,8 @@ fn make_png_encoder(path: &Path, size: (u32, u32)) -> png::Encoder<BufWriter<Fil
 }
 
 
-fn screen_int_to_float(int_coords: &(i32, i32), screen_size: &(i32, i32), view_size: &(f64, f64), view_corner_pos: &(f64, f64)) -> (f64, f64) {
-    return ((int_coords.0 as f64)*view_size.0/((screen_size.0-1) as f64)+view_corner_pos.0, (int_coords.1 as f64)*view_size.1/((screen_size.1-1) as f64)+view_corner_pos.1);
+fn screen_int_to_complex(int_coords: &(i32, i32), screen_size: &(i32, i32), view_size: &(f64, f64), view_corner_pos: &(f64, f64)) -> Complex64 {
+    return Complex64::new((int_coords.0 as f64)*view_size.0/((screen_size.0-1) as f64)+view_corner_pos.0, (int_coords.1 as f64)*view_size.1/((screen_size.1-1) as f64)+view_corner_pos.1);
 }
 
 fn screen_complex_to_int(z: &num::complex::Complex64, screen_size: &(i32, i32), view_size: &(f64, f64), view_corner_pos: &(f64, f64)) -> (i32, i32) {
@@ -60,9 +60,10 @@ struct SampleMandelbrotResult {
 
 fn sample_mandelbrot(c: Complex64, iter_limit: i32, escape_radius: f64) -> SampleMandelbrotResult {
     let mut z = Complex64::new(0.0_f64, 0.0_f64);
+    let escapeRadiusSquared = num::pow(escape_radius, 2);
     for i in 0..iter_limit {
         z = step_mandelbrot_point(z, c);
-        if abs_squared(z) > escape_radius*escape_radius {
+        if abs_squared(z) > escapeRadiusSquared {
             return SampleMandelbrotResult {
                 iter_count: i,
                 escaped: true,
@@ -98,9 +99,12 @@ fn do_buddhabrot_point(c: Complex64, iter_limit: i32, escape_radius: f64, includ
 
     if shouldBeDrawn {
         let mut z = Complex64::new(0.0_f64, 0.0_f64);
+        //let mut zProgressiveSum = z.clone();
+        let escapeRadiusSquared = num::pow(escape_radius, 2);
         for i in 0..iter_limit {
             z = step_mandelbrot_point(z, c);
-            if abs_squared(z) > escape_radius*escape_radius {
+            //zProgressiveSum += z;
+            if abs_squared(z) > escapeRadiusSquared {
                 return;
             }
             // assert!(z.0.abs()*0.45_f64 <= view_size.0);
@@ -112,8 +116,10 @@ fn do_buddhabrot_point(c: Complex64, iter_limit: i32, escape_radius: f64, includ
                 weighted_sum_of_pair((z.0, sampleResult.last_position.0), (1.0-escapeProgress, escapeProgress)), weighted_sum_of_pair((z.1, sampleResult.last_position.1), (1.0-escapeProgress, escapeProgress))
             );
             */
-            let modifiedZ = Complex64::new(z.im*c.re+z.re*sampleResult.last_position.re, z.im*c.im+z.re*sampleResult.last_position.im);
+            // let modifiedZ = Complex64::new(z.im*c.re+z.re*sampleResult.last_position.re, z.im*c.im+z.re*sampleResult.last_position.im);
             //let modifiedZAsComplex = Complex64 { re: modifiedZ.0, im: modifiedZ.1 };
+            //let modifiedZ = zProgressiveSum / ((i + 1) as f64);
+            let modifiedZ = z;
             let screenIntCoord = screen_complex_to_int(&modifiedZ, screen_size, view_size, view_corner_pos);
             
             if (!int_is_bounded(screenIntCoord.0, 0, screen_size.0-1)) || (!int_is_bounded(screenIntCoord.1, 0, screen_size.1-1)) {
@@ -149,14 +155,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn screen_int_to_float_test() {
-        let result = screen_int_to_float(&(0,0), &(512,512), &(4.0,4.0), &(-2.0, -2.0));
-        if (result.0 + 2.0).abs() > 0.05 || (result.1 + 2.0).abs() > 0.5 {
+    fn screen_int_to_complex_test() {
+        let result = screen_int_to_complex(&(0,0), &(512,512), &(4.0,4.0), &(-2.0, -2.0));
+        if (result.re + 2.0).abs() > 0.05 || (result.im + 2.0).abs() > 0.5 {
             panic!("low output float coord is not correct: {:?}", result);
         }
 
-        let result = screen_int_to_float(&(511,511), &(512,512), &(4.0,4.0), &(-2.0, -2.0));
-        if (result.0 - 2.0).abs() > 0.05 || (result.1 - 2.0).abs() > 0.5 {
+        let result = screen_int_to_complex(&(511,511), &(512,512), &(4.0,4.0), &(-2.0, -2.0));
+        if (result.re - 2.0).abs() > 0.05 || (result.im - 2.0).abs() > 0.5 {
             panic!("high output float coord is not correct: {:?}", result);
         }
     }
@@ -182,10 +188,10 @@ mod tests {
 
 const ITER_LIMIT: i32 = 16384;
 const ESCAPE_RADIUS: f64 = 2.0_f64;
-const _PALETTE_STR: &str = " .-+%#@";
-const PALETTE_SIZE: i32 = _PALETTE_STR.len() as i32;
+// const _PALETTE_STR: &str = " .-+%#@";
+// const PALETTE_SIZE: i32 = _PALETTE_STR.len() as i32;
 
-const BIDIRECTIONAL_SUPERSAMPLING: i32 = 1;
+const BIDIRECTIONAL_SUPERSAMPLING: i32 = 2;
 const COUNT_SCALE: u8 = 1;
 const SCREEN_SIZE: (i32, i32) = (1024, 1024);
 const SEED_GRID_SIZE: (i32, i32) = (SCREEN_SIZE.0*BIDIRECTIONAL_SUPERSAMPLING, SCREEN_SIZE.1*BIDIRECTIONAL_SUPERSAMPLING);
@@ -200,10 +206,12 @@ const OUTPUT_BAND_SEED_GRID_HEIGHT: i32 = SEED_GRID_SIZE.1 / OUTPUT_BAND_COUNT;
 fn save_project_png(screen_data: &mut Vec<u8>, suffix: String) {
     
     // escProgressLerpsZToEscPt
+    // ziAKc+zrAKescPt
+    // _meanOfZSeq
     let now = SystemTime::now();
 
     let outfile_path_string: String = format!(
-        "./output/seqs/test24cpx_bb_RallGincrBinci_ziAKc+zrAKescPt_{itr}itr{bisuper}bisuper_color({colorScale}scale)_({width}x{height})_{suffixInsert}.png",
+        "./output/seqs/test28_bb_RallGincrBinci_{itr}itr{bisuper}bisuper_color({colorScale}scale)_({width}x{height})_{suffixInsert}.png",
         itr=ITER_LIMIT, bisuper=BIDIRECTIONAL_SUPERSAMPLING, colorScale=COUNT_SCALE, width=SCREEN_SIZE.0, height=SCREEN_SIZE.1, suffixInsert=suffix,
     );
     let mut encoder = make_png_encoder(Path::new(&outfile_path_string), (SCREEN_SIZE.0 as u32, SCREEN_SIZE.1 as u32));
@@ -223,12 +231,12 @@ fn save_project_png(screen_data: &mut Vec<u8>, suffix: String) {
     let mut main_writer = encoder.write_header().unwrap();
     main_writer.write_image_data(&screen_data).unwrap();
     // let elapsed = now.elapsed();
-    println!("saved an image as {}.", outfile_path_string);
+    println!("\nsaved an image as {}.", outfile_path_string);
     match now.elapsed() {
         Ok(elapsed) => {
             println!("saving image took {} seconds.", format_num!(".2f", elapsed.as_secs_f32()));
         }
-        Err(e) => {
+        Err(_e) => {
             eprintln!("calculating time taken to save image FAILED.");
         }
     }
@@ -272,8 +280,7 @@ fn main() {
             // let currChar: String = String::from(PALETTE.as_bytes()[]);
             //let centerC = screen_int_to_float(&x, &y, &SCREEN_SIZE.0, &SCREEN_SIZE.1, &view_size.0, &view_size.1);
             //let c = (centerC.0 - view_corner_pos.0, centerC.1 - view_corner_pos.1);
-            let cAsFloatTup = screen_int_to_float(&(x,y), &SEED_GRID_SIZE, &view_size, &view_corner_pos);
-            let c = Complex64::new(cAsFloatTup.0, cAsFloatTup.1);
+            let c = screen_int_to_complex(&(x,y), &SEED_GRID_SIZE, &view_size, &view_corner_pos);
             /*
             let iterCount = sample_mandelbrot(c, ITER_LIMIT, ESCAPE_RADIUS);
             let indexInScreenData = coords_to_wrapped_vec_index((x,y), SCREEN_SIZE.0);
