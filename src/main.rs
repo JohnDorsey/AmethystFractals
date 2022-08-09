@@ -36,8 +36,8 @@ fn screen_complex_to_int(z: &num::complex::Complex64, screen_size: &(i32, i32), 
     return (((z.re-view_corner_pos.0) * (screen_size.0 as f64) / view_size.0) as i32,  ((z.im-view_corner_pos.1) * (screen_size.1 as f64) / view_size.1) as i32);
 }
 
-fn coords_to_wrapped_vec_index(int_coords: (i32, i32), wrap_width: i32) -> i32 {
-    return int_coords.1 * wrap_width + int_coords.0;
+fn coords_to_wrapped_vec_index(int_coords: (i32, i32), wrap_width: i32) -> u64 {
+    return (int_coords.1 as u64) * (wrap_width as u64) + (int_coords.0 as u64);
 }
 
 
@@ -99,12 +99,12 @@ fn do_buddhabrot_point(c: Complex64, iter_limit: i32, escape_radius: f64, includ
 
     if shouldBeDrawn {
         let mut z = Complex64::new(0.0_f64, 0.0_f64);
-        //let mut zProgressiveSum = z.clone();
-        let escapeRadiusSquared = num::pow(escape_radius, 2);
+        let mut zProgressiveSum = z.clone();
+        // let escapeRadiusSquared = num::pow(escape_radius, 2);
         for i in 0..iter_limit {
             z = step_mandelbrot_point(z, c);
-            //zProgressiveSum += z;
-            if abs_squared(z) > escapeRadiusSquared {
+            zProgressiveSum += z;
+            if z.norm() > escape_radius {
                 return;
             }
             // assert!(z.0.abs()*0.45_f64 <= view_size.0);
@@ -118,9 +118,9 @@ fn do_buddhabrot_point(c: Complex64, iter_limit: i32, escape_radius: f64, includ
             */
             // let modifiedZ = Complex64::new(z.im*c.re+z.re*sampleResult.last_position.re, z.im*c.im+z.re*sampleResult.last_position.im);
             //let modifiedZAsComplex = Complex64 { re: modifiedZ.0, im: modifiedZ.1 };
-            //let modifiedZ = zProgressiveSum / ((i + 1) as f64);
-            let modifiedZ = z;
-            let screenIntCoord = screen_complex_to_int(&modifiedZ, screen_size, view_size, view_corner_pos);
+            let zMean = zProgressiveSum / ((i + 1) as f64);
+            //let modifiedZ = z;
+            let screenIntCoord = screen_complex_to_int(&z, screen_size, view_size, view_corner_pos);
             
             if (!int_is_bounded(screenIntCoord.0, 0, screen_size.0-1)) || (!int_is_bounded(screenIntCoord.1, 0, screen_size.1-1)) {
                 // screenIntCoord = (screenIntCoord.0 % screen_size.0, screenIntCoord.1 % screen_size.1);
@@ -129,14 +129,15 @@ fn do_buddhabrot_point(c: Complex64, iter_limit: i32, escape_radius: f64, includ
             }
             assert!(SCREEN_CHANNEL_COUNT == 3);
             let indexInScreenData = coords_to_wrapped_vec_index((screenIntCoord.0*(SCREEN_CHANNEL_COUNT as i32), screenIntCoord.1), screen_size.0*(SCREEN_CHANNEL_COUNT as i32)) as usize;
-            // let (czLen, zeLen, ceLen) = 
-            if screen_data[indexInScreenData] <= 255-COUNT_SCALE {
+            let (czLen, zZmLen, cZmLen) = ((c-z).norm(), (z-zMean).norm(), (c-zMean).norm());
+            let longest = (czLen>zZmLen&&czLen>cZmLen, zZmLen>czLen&&zZmLen>cZmLen, cZmLen>czLen&&cZmLen>zZmLen);
+            if screen_data[indexInScreenData] <= 255-COUNT_SCALE && longest.0{
                 screen_data[indexInScreenData] += COUNT_SCALE;
             }
-            if screen_data[indexInScreenData+1] <= 255-COUNT_SCALE && z.re>c.re {
+            if screen_data[indexInScreenData+1] <= 255-COUNT_SCALE && longest.1 {
                 screen_data[indexInScreenData+1] += COUNT_SCALE;
             }
-            if screen_data[indexInScreenData+2] <= 255-COUNT_SCALE && z.im>c.im {
+            if screen_data[indexInScreenData+2] <= 255-COUNT_SCALE && longest.2 {
                 screen_data[indexInScreenData+2] += COUNT_SCALE;
             }
         }
@@ -193,12 +194,12 @@ const ESCAPE_RADIUS: f64 = 2.0_f64;
 
 const BIDIRECTIONAL_SUPERSAMPLING: i32 = 2;
 const COUNT_SCALE: u8 = 1;
-const SCREEN_SIZE: (i32, i32) = (1024, 1024);
+const SCREEN_SIZE: (i32, i32) = (16384, 16384);
 const SEED_GRID_SIZE: (i32, i32) = (SCREEN_SIZE.0*BIDIRECTIONAL_SUPERSAMPLING, SCREEN_SIZE.1*BIDIRECTIONAL_SUPERSAMPLING);
 const SCREEN_CHANNEL_COUNT: usize = 3;
 // const SCREEN_PIXEL_COUNT: usize = (SCREEN_SIZE.0*SCREEN_SIZE.1) as usize;
 const SCREEN_INT_COUNT: usize = ((SCREEN_SIZE.0*SCREEN_SIZE.1) as usize) * SCREEN_CHANNEL_COUNT;
-const OUTPUT_BAND_COUNT: i32 = 8;
+const OUTPUT_BAND_COUNT: i32 = 16;
 const OUTPUT_BAND_SEED_GRID_HEIGHT: i32 = SEED_GRID_SIZE.1 / OUTPUT_BAND_COUNT;
 
 
@@ -211,9 +212,10 @@ fn save_project_png(screen_data: &mut Vec<u8>, suffix: String) {
     let now = SystemTime::now();
 
     let outfile_path_string: String = format!(
-        "./output/seqs/test28_bb_RallGincrBinci_{itr}itr{bisuper}bisuper_color({colorScale}scale)_({width}x{height})_{suffixInsert}.png",
+        "./output/seqs_release/test34_bb_longest(RczLenGzZmLenBcZmLen)_{itr}itr{bisuper}bisuper_color({colorScale}scale)_({width}x{height})_{suffixInsert}.png",
         itr=ITER_LIMIT, bisuper=BIDIRECTIONAL_SUPERSAMPLING, colorScale=COUNT_SCALE, width=SCREEN_SIZE.0, height=SCREEN_SIZE.1, suffixInsert=suffix,
     );
+    println!("\n\nsaving an image as {}...", outfile_path_string);
     let mut encoder = make_png_encoder(Path::new(&outfile_path_string), (SCREEN_SIZE.0 as u32, SCREEN_SIZE.1 as u32));
 
     {
@@ -231,7 +233,6 @@ fn save_project_png(screen_data: &mut Vec<u8>, suffix: String) {
     let mut main_writer = encoder.write_header().unwrap();
     main_writer.write_image_data(&screen_data).unwrap();
     // let elapsed = now.elapsed();
-    println!("\nsaved an image as {}.", outfile_path_string);
     match now.elapsed() {
         Ok(elapsed) => {
             println!("saving image took {} seconds.", format_num!(".2f", elapsed.as_secs_f32()));
@@ -268,7 +269,7 @@ fn main() {
     for y in 0..SEED_GRID_SIZE.1 {
         if y % 512 == 0 {
             print!("\n{}/{} seed rows complete.", y, SEED_GRID_SIZE.0);
-        } else if y % 64 == 0 {
+        } else if y % 4 == 0 {
             print!(" {}/{}.", y, SEED_GRID_SIZE.0);
         }
         std::io::stdout().flush().unwrap();
