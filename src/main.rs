@@ -7,13 +7,14 @@
 use std::path::Path;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::ops;
+use std::ops::{self, Div};
 use std::str::FromStr;
 use std::time::SystemTime;
 
 use format_num::format_num;
 //use num::Complex;
-use num::complex::Complex64;
+use num::complex::{Complex64, ComplexFloat};
+use foreach::for_each;
 
 
 fn path_to_buffer_writer(path: &Path) -> BufWriter<File> {
@@ -28,6 +29,9 @@ fn make_png_encoder(path: &Path, size: (u32, u32)) -> png::Encoder<BufWriter<Fil
 }
 
 
+
+
+
 fn screen_int_to_complex(int_coords: &(i32, i32), screen_size: &(i32, i32), view_size: &(f64, f64), view_corner_pos: &(f64, f64)) -> Complex64 {
     return Complex64::new((int_coords.0 as f64)*view_size.0/((screen_size.0-1) as f64)+view_corner_pos.0, (int_coords.1 as f64)*view_size.1/((screen_size.1-1) as f64)+view_corner_pos.1);
 }
@@ -39,6 +43,9 @@ fn screen_complex_to_int(z: &num::complex::Complex64, screen_size: &(i32, i32), 
 fn coords_to_wrapped_vec_index(int_coords: (i32, i32), wrap_width: i32) -> u64 {
     return (int_coords.1 as u64) * (wrap_width as u64) + (int_coords.0 as u64);
 }
+
+
+
 
 
 
@@ -64,15 +71,57 @@ fn sample_mandelbrot(c: Complex64, iter_limit: i32, escape_radius: f64) -> Sampl
     for i in 0..iter_limit {
         z = step_mandelbrot_point(z, c);
         if abs_squared(z) > escapeRadiusSquared {
-            return SampleMandelbrotResult {
-                iter_count: i,
-                escaped: true,
-                last_position: z,
-            };
+            return SampleMandelbrotResult { iter_count: i, escaped: true, last_position: z };
         }
     }
     return SampleMandelbrotResult { iter_count: iter_limit, escaped: false, last_position: z };
 }
+
+/*
+struct ComplexJourney<T> {
+
+}
+*/
+
+fn get_buddhabrot_journey<T>(c: Complex64, iter_limit: i32, escape_radius: f64) -> Vec<Complex64> {
+    let mut z = Complex64::new(0.0_f64, 0.0_f64);
+    let mut result: Vec<Complex64> = vec![];
+    let escapeRadiusSquared = num::pow(escape_radius, 2);
+    for i in 0..iter_limit {
+        z = step_mandelbrot_point(z, c);
+        result.push(z);
+        if abs_squared(z) > escapeRadiusSquared {
+            return result;
+        }
+    }
+    return result;
+}
+
+fn transform_list_windowed<T: Clone>(input_seq: Vec<T>, window_width: usize, output_step: usize, transformer: fn(Vec<T>) -> T) -> Vec<T> {
+    let mut result: Vec<T> = vec![];
+    for i in (0..(input_seq.len())).step_by(output_step) {
+        let newItem = transformer(input_seq.get(i..(i+window_width)).unwrap().to_vec());
+        result.push(newItem);
+    }
+    return result;
+}
+
+fn mean<T: ops::Add<T, Output = T> + ops::Div<usize, Output= T> + num::Zero + Copy>(input_seq: Vec<T>) -> T {
+    let mut currentSum: T = num::zero();
+    let mut workingSeq = input_seq.iter();
+    for_each!(item in workingSeq {
+        let ownedItem: T = item.clone();
+        currentSum = currentSum + ownedItem;
+    });
+    return currentSum / input_seq.len();
+}
+
+
+
+
+
+
+
 
 fn int_is_bounded<T: PartialOrd>(value: T, min: T, max: T) -> bool {
     assert!(min < max);
@@ -87,6 +136,19 @@ fn lerp<T: ops::Mul<Output = T> + ops::Add<Output = T> + ops::Sub<Output = T>>(w
 //  + ops::Div<Output = T>  / (weight_pair.0 + weight_pair.1)
 fn weighted_sum_of_pair<T: ops::Mul<Output = T> + ops::Add<Output = T>>(waypoint_pair: (T, T), weight_pair: (T, T)) -> T {
     (waypoint_pair.0 * weight_pair.0) + (waypoint_pair.1 * weight_pair.1)
+}
+
+fn screen_complex_to_index(z: &num::complex::Complex64, screen_size: &(i32, i32), view_size: &(f64, f64), view_corner_pos: &(f64, f64)) -> Option<usize> {
+    let screenIntCoord = screen_complex_to_int(&z, screen_size, view_size, view_corner_pos);
+            
+    if (!int_is_bounded(screenIntCoord.0, 0, screen_size.0-1)) || (!int_is_bounded(screenIntCoord.1, 0, screen_size.1-1)) {
+        // screenIntCoord = (screenIntCoord.0 % screen_size.0, screenIntCoord.1 % screen_size.1);
+        // panic!("invalid int coord reached: {:?} (from {:?} at iteration {}).", screenIntCoord, z, i);
+        return None;
+    }
+    assert!(SCREEN_CHANNEL_COUNT == 3);
+    let indexInScreenData = coords_to_wrapped_vec_index((screenIntCoord.0*(SCREEN_CHANNEL_COUNT as i32), screenIntCoord.1), screen_size.0*(SCREEN_CHANNEL_COUNT as i32)) as usize;
+    return Some(indexInScreenData);
 }
 
 
@@ -120,24 +182,21 @@ fn do_buddhabrot_point(c: Complex64, iter_limit: i32, escape_radius: f64, includ
             //let modifiedZAsComplex = Complex64 { re: modifiedZ.0, im: modifiedZ.1 };
             let zMean = zProgressiveSum / ((i + 1) as f64);
             //let modifiedZ = z;
-            let screenIntCoord = screen_complex_to_int(&z, screen_size, view_size, view_corner_pos);
-            
-            if (!int_is_bounded(screenIntCoord.0, 0, screen_size.0-1)) || (!int_is_bounded(screenIntCoord.1, 0, screen_size.1-1)) {
-                // screenIntCoord = (screenIntCoord.0 % screen_size.0, screenIntCoord.1 % screen_size.1);
-                // panic!("invalid int coord reached: {:?} (from {:?} at iteration {}).", screenIntCoord, z, i);
-                continue;
+            let Option_IndexInScreenData = screen_complex_to_index(&z, screen_size, view_size, view_corner_pos);
+            let indexInScreenData: usize;
+            match Option_IndexInScreenData {
+                None => continue,
+                Some(a) => indexInScreenData = a,
             }
-            assert!(SCREEN_CHANNEL_COUNT == 3);
-            let indexInScreenData = coords_to_wrapped_vec_index((screenIntCoord.0*(SCREEN_CHANNEL_COUNT as i32), screenIntCoord.1), screen_size.0*(SCREEN_CHANNEL_COUNT as i32)) as usize;
-            let (czLen, zZmLen, cZmLen) = ((c-z).norm(), (z-zMean).norm(), (c-zMean).norm());
-            let longest = (czLen>zZmLen&&czLen>cZmLen, zZmLen>czLen&&zZmLen>cZmLen, cZmLen>czLen&&cZmLen>zZmLen);
-            if screen_data[indexInScreenData] <= 255-COUNT_SCALE && longest.0{
+            //let (czLen, zZmLen, cZmLen) = ((c-z).norm(), (z-zMean).norm(), (c-zMean).norm());
+            //let longest = (czLen>zZmLen&&czLen>cZmLen, zZmLen>czLen&&zZmLen>cZmLen, cZmLen>czLen&&cZmLen>zZmLen);
+            if screen_data[indexInScreenData] <= 255-COUNT_SCALE && z.abs() > zMean.abs() {
                 screen_data[indexInScreenData] += COUNT_SCALE;
             }
-            if screen_data[indexInScreenData+1] <= 255-COUNT_SCALE && longest.1 {
+            if screen_data[indexInScreenData+1] <= 255-COUNT_SCALE && z.im > zMean.im {
                 screen_data[indexInScreenData+1] += COUNT_SCALE;
             }
-            if screen_data[indexInScreenData+2] <= 255-COUNT_SCALE && longest.2 {
+            if screen_data[indexInScreenData+2] <= 255-COUNT_SCALE && z.im > sampleResult.last_position.im {
                 screen_data[indexInScreenData+2] += COUNT_SCALE;
             }
         }
@@ -193,8 +252,8 @@ const ESCAPE_RADIUS: f64 = 2.0_f64;
 // const PALETTE_SIZE: i32 = _PALETTE_STR.len() as i32;
 
 const BIDIRECTIONAL_SUPERSAMPLING: i32 = 2;
-const COUNT_SCALE: u8 = 1;
-const SCREEN_SIZE: (i32, i32) = (16384, 16384);
+const COUNT_SCALE: u8 = 2;
+const SCREEN_SIZE: (i32, i32) = (1024, 1024);
 const SEED_GRID_SIZE: (i32, i32) = (SCREEN_SIZE.0*BIDIRECTIONAL_SUPERSAMPLING, SCREEN_SIZE.1*BIDIRECTIONAL_SUPERSAMPLING);
 const SCREEN_CHANNEL_COUNT: usize = 3;
 // const SCREEN_PIXEL_COUNT: usize = (SCREEN_SIZE.0*SCREEN_SIZE.1) as usize;
@@ -209,10 +268,17 @@ fn save_project_png(screen_data: &mut Vec<u8>, suffix: String) {
     // escProgressLerpsZToEscPt
     // ziAKc+zrAKescPt
     // _meanOfZSeq
+    // longest(RczLenGzZmLenBcZmLen)
+    /*
+        from RelentlessFractals.py:
+            "<":"LS", ">":"GR", ":":"CN", "\"":"DQ", "\\":"BS", "|":"VP", "?":"QM", "*":"AK", 
+            "=":"EQ", "'":"SQ", "!":"XM", "@":"AT", "#":"HS", "$":"DS", "%":"PC",  "^":"CT", "&":"AP",
+            ";":"SN", "~":"TD", "[":"LB", "]":"RB", "{":"LC", "}":"RC",
+    */
     let now = SystemTime::now();
 
     let outfile_path_string: String = format!(
-        "./output/seqs_release/test34_bb_longest(RczLenGzZmLenBcZmLen)_{itr}itr{bisuper}bisuper_color({colorScale}scale)_({width}x{height})_{suffixInsert}.png",
+        "./output/seqs_release/test37_bb_R(abs(z)GRabs(zM))G(ziGRzMi)B(ziGRescPti)_{itr}itr{bisuper}bisuper_color({colorScale}scale)_({width}x{height})_{suffixInsert}.png",
         itr=ITER_LIMIT, bisuper=BIDIRECTIONAL_SUPERSAMPLING, colorScale=COUNT_SCALE, width=SCREEN_SIZE.0, height=SCREEN_SIZE.1, suffixInsert=suffix,
     );
     println!("\n\nsaving an image as {}...", outfile_path_string);
